@@ -31,7 +31,8 @@ my_black = colorant"rgba(0, 0, 0, 1.0)"
 ## Types
 struct ChainSystem
     ωmax::Float64               # Largest mode frequency
-    δ::Float64                  # Time step
+    τs::Vector{Float64}         # Time steps
+    ls::Vector{Int}             # Chain mass separation
     Γ::Matrix{Float64}          # Response array
 end
 
@@ -64,278 +65,44 @@ end
 
 # Chain recoil function
 function Γ(τs, ls, ωmax)
-    int_fun(x) = cos.(2 * x * ls)' * sin(2 * π * τs * ω(ωmax, x)) / ω(ωmax, x)
+    int_fun(x) = cos.(2 * x * ls) * sin.(2 * π * τs * ω(ωmax, x))' / ω(ωmax, x)
     res = quadgk(int_fun, 0, π / 2, atol = 1e-8)
     return (res[1] * 2 / π)
 end
 
 # Covariance matrix between chain mass displacements
-function C_corr(τ, ls, ωmax, ωT)
+function C_corr(τs, ls, ωmax, ωT)
     int_fun(x) =
-        cos.(2 * x * ls) * cos(2 * π * τ * ω(ωmax, x)) / ω(ωmax, x) *
+        cos.(2 * x * ls) * cos.(2 * π * τs * ω(ωmax, x))' / ω(ωmax, x) *
         coth(ω(ωmax, x) / 2 / ωT)
     res = quadgk(int_fun, 0, π / 2, atol = 1e-8)
     return (res[1] / π)
 end
 
+# Precompute recoil term
+function mkChainSystem(τmin, τmax, δ, ls, ωmax; batch_size = 100)
+    τs = range(τmin, τmax, step = δ)
+    Γ_mat = zeros(length(ls), length(τs))       # Preallocate Γ matrix
 
-# Precompute recoil term and take existing files into account
-function mkChainSystem(ωmax, τ_min, τ_max, ls, d)
-    δ = (1 / ωmax) / d                          # Time step in units of t_slow
-    n_pts = floor((τ_max - τ_min) / δ) |> Int   # Number of time steps given τ_max and δ
-    Γ_mat = zeros(length(ls), n_pts)            # Prepare the Γ matrix
+    # Reorder the time steps so that the load is equal for every thread
+    # because latter times take longer to evaluate
+    τs_idx = reduce(
+        vcat,
+        [collect(eachindex(τs))[n:Threads.nthreads():end] for n = 1:Threads.nthreads()],
+    )
 
-    # No precomputation files exist
-    if isempty(Γ_prev)
-        println("No existing file, starting precomputation")
-        pr = Progress(n_pts)                        # Setup the progress meter
-        pts_per_thread = n_pts ÷ Threads.nthreads() # Calculate points per thread
+    τs_idx_batches = Iterators.partition(τs_idx, batch_size) |> collect
+    pr = Progress(length(ls) * length(τs_idx_batches))  # Setup the progress meter
 
-        # Reorder the time steps so that the load is equal for every thread because latter times take longer to evaluate
-        thread_pts =
-            reshape(1:(Threads.nthreads()*pts_per_thread), Threads.nthreads(), :)' |>
-            vec |>
-            collect
-
-        Threads.@threads for ii in thread_pts
-            Γ_mat[:, ii] = Γ(δ * ii, 0:lmax, ωmax)
+    for ll in eachindex(ls)
+        Threads.@threads for ii in τs_idx_batches
+            Γ_mat[ll, ii] = Γ(τs[ii], ls[ll], ωmax)
             next!(pr)
-        end
-
-        # Evaluate the remaining time steps if needed
-        if length(thread_pts) != n_pts
-            Threads.@threads for ii in (length(thread_pts)+1:n_pts)
-                Γ_mat[:, ii] = Γ(δ * ii, 0:lmax, ωmax)
-                next!(pr)
-            end
-        end
-
-        # A file exists with enough time steps, but not enough chain masses
-    elseif lmax > Γ_dim[1] && n_pts <= Γ_dim[2]
-        println("Sufficient number of time steps, calculating for more chain masses")
-        Γ_mat[1:Γ_dim[1], :] = Γ_prev[:, 1:n_pts]   # Fill matrix with previous data
-        pr = Progress(n_pts)                        # Setup the progress meter
-        pts_per_thread = n_pts ÷ Threads.nthreads() # Calculate points per thread
-
-        # Reorder the time steps
-        thread_pts =
-            reshape(1:(Threads.nthreads()*pts_per_thread), Threads.nthreads(), :)' |>
-            vec |>
-            collect
-
-        indices = (Γ_dim[1]+1:lmax)
-        Threads.@threads for ii in thread_pts
-            Γ_mat[indices, ii] = Γ(δ * ii, indices, ωmax)
-            next!(pr)
-        end
-
-        # Evaluate the remaining time steps
-        if length(thread_pts) != n_pts
-            Threads.@threads for ii in (length(thread_pts)+1:n_pts)
-                Γ_mat[indices, ii] = Γ(δ * ii, indices, ωmax)
-                next!(pr)
-            end
-        end
-
-        # A file exists with enough chain masses, but not enough time steps
-    elseif lmax <= Γ_dim[1] && n_pts > Γ_dim[2]
-        println("Sufficient number of chain atoms, calculating for more time steps")
-        Γ_mat[:, 1:Γ_dim[2]] = Γ_prev[1:lmax+1, :]   # Fill matrix with previous data
-        rem_pts = n_pts - Γ_dim[2]
-        pr = Progress(rem_pts)                        # Setup the progress meter
-        pts_per_thread = rem_pts ÷ Threads.nthreads() # Calculate points per thread
-
-        # Reorder the time steps
-        thread_pts =
-            reshape(
-                Γ_dim[2]+1:(Threads.nthreads()*pts_per_thread+Γ_dim[2]),
-                Threads.nthreads(),
-                :,
-            )' |>
-            vec |>
-            collect
-
-        Threads.@threads for ii in thread_pts
-            Γ_mat[:, ii] = Γ(δ * ii, 0:lmax, ωmax)
-            next!(pr)
-        end
-
-        # Evaluate the remaining time steps
-        if length(thread_pts) != rem_pts
-            Threads.@threads for ii in (length(thread_pts)+1:n_pts)
-                Γ_mat[:, ii] = Γ(δ * ii, 0:lmax, ωmax)
-                next!(pr)
-            end
-        end
-
-        # A file exists with insufficient number of chain masses and time steps
-    elseif lmax > Γ_dim[1] && n_pts > Γ_dim[2]
-        println("Calculating for more chain masses and time steps")
-        Γ_mat[1:Γ_dim[1], 1:Γ_dim[2]] = Γ_prev   # Fill matrix with previous data
-        pr = Progress(n_pts)                        # Setup the progress meter
-        pts_per_thread = n_pts ÷ Threads.nthreads() # Calculate points per thread
-
-        # Reorder the time steps
-        thread_pts =
-            reshape(1:(Threads.nthreads()*pts_per_thread), Threads.nthreads(), :)' |>
-            vec |>
-            collect
-
-        Threads.@threads for ii in thread_pts
-            indices1 = ii <= Γ_dim[2] ? (Γ_dim[1]+1:lmax+1) : (1:lmax+1)
-            indices2 = ii <= Γ_dim[2] ? (Γ_dim[1]:lmax) : (0:lmax)
-            Γ_mat[indices1, ii] = Γ(δ * ii, indices2, ωmax)
-            next!(pr)
-        end
-
-        # Evaluate the remaining time steps
-        if length(thread_pts) != n_pts
-            Threads.@threads for ii in (length(thread_pts)+1:n_pts)
-                indices1 = ii <= Γ_dim[2] ? (Γ_dim[1]+1:lmax+1) : (1:lmax+1)
-                indices2 = ii <= Γ_dim[2] ? (Γ_dim[1]:lmax) : (0:lmax)
-                Γ_mat[indices1, ii] = Γ(δ * ii, indices2, ωmax)
-                next!(pr)
-            end
         end
     end
 
-    return ChainSystem(ωmax, δ, Γ_mat)
+    return ChainSystem(ωmax, τs, ls, Γ_mat)
 end
-
-
-
-
-
-
-
-
-
-
-
-
-# # Precompute recoil term and take existing files into account
-# function mkChainSystem(ωmax, τ_max, lmax, d, Γ_prev)
-#     δ = (1 / ωmax) / d                          # Time step in units of t_slow
-#     n_pts = floor(τ_max / δ) |> Int             # Number of time steps given τ_max and δ
-#     Γ_dim = size(Γ_prev)                        # Existing matrix size (if any)
-#     Γ_mat = zeros(lmax + 1, n_pts)              # Prepare the Γ matrix
-
-#     # No precomputation files exist
-#     if isempty(Γ_prev)
-#         println("No existing file, starting precomputation")
-#         pr = Progress(n_pts)                        # Setup the progress meter
-#         pts_per_thread = n_pts ÷ Threads.nthreads() # Calculate points per thread
-
-#         # Reorder the time steps so that the load is equal for every thread because latter times take longer to evaluate
-#         thread_pts =
-#             reshape(1:(Threads.nthreads()*pts_per_thread), Threads.nthreads(), :)' |>
-#             vec |>
-#             collect
-
-#         Threads.@threads for ii in thread_pts
-#             Γ_mat[:, ii] = Γ(δ * ii, 0:lmax, ωmax)
-#             next!(pr)
-#         end
-
-#         # Evaluate the remaining time steps if needed
-#         if length(thread_pts) != n_pts
-#             Threads.@threads for ii in (length(thread_pts)+1:n_pts)
-#                 Γ_mat[:, ii] = Γ(δ * ii, 0:lmax, ωmax)
-#                 next!(pr)
-#             end
-#         end
-
-#         # A file exists with enough time steps, but not enough chain masses
-#     elseif lmax > Γ_dim[1] && n_pts <= Γ_dim[2]
-#         println("Sufficient number of time steps, calculating for more chain masses")
-#         Γ_mat[1:Γ_dim[1], :] = Γ_prev[:, 1:n_pts]   # Fill matrix with previous data
-#         pr = Progress(n_pts)                        # Setup the progress meter
-#         pts_per_thread = n_pts ÷ Threads.nthreads() # Calculate points per thread
-
-#         # Reorder the time steps
-#         thread_pts =
-#             reshape(1:(Threads.nthreads()*pts_per_thread), Threads.nthreads(), :)' |>
-#             vec |>
-#             collect
-
-#         indices = (Γ_dim[1]+1:lmax)
-#         Threads.@threads for ii in thread_pts
-#             Γ_mat[indices, ii] = Γ(δ * ii, indices, ωmax)
-#             next!(pr)
-#         end
-
-#         # Evaluate the remaining time steps
-#         if length(thread_pts) != n_pts
-#             Threads.@threads for ii in (length(thread_pts)+1:n_pts)
-#                 Γ_mat[indices, ii] = Γ(δ * ii, indices, ωmax)
-#                 next!(pr)
-#             end
-#         end
-
-#         # A file exists with enough chain masses, but not enough time steps
-#     elseif lmax <= Γ_dim[1] && n_pts > Γ_dim[2]
-#         println("Sufficient number of chain atoms, calculating for more time steps")
-#         Γ_mat[:, 1:Γ_dim[2]] = Γ_prev[1:lmax+1, :]   # Fill matrix with previous data
-#         rem_pts = n_pts - Γ_dim[2]
-#         pr = Progress(rem_pts)                        # Setup the progress meter
-#         pts_per_thread = rem_pts ÷ Threads.nthreads() # Calculate points per thread
-
-#         # Reorder the time steps
-#         thread_pts =
-#             reshape(
-#                 Γ_dim[2]+1:(Threads.nthreads()*pts_per_thread+Γ_dim[2]),
-#                 Threads.nthreads(),
-#                 :,
-#             )' |>
-#             vec |>
-#             collect
-
-#         Threads.@threads for ii in thread_pts
-#             Γ_mat[:, ii] = Γ(δ * ii, 0:lmax, ωmax)
-#             next!(pr)
-#         end
-
-#         # Evaluate the remaining time steps
-#         if length(thread_pts) != rem_pts
-#             Threads.@threads for ii in (length(thread_pts)+1:n_pts)
-#                 Γ_mat[:, ii] = Γ(δ * ii, 0:lmax, ωmax)
-#                 next!(pr)
-#             end
-#         end
-
-#         # A file exists with insufficient number of chain masses and time steps
-#     elseif lmax > Γ_dim[1] && n_pts > Γ_dim[2]
-#         println("Calculating for more chain masses and time steps")
-#         Γ_mat[1:Γ_dim[1], 1:Γ_dim[2]] = Γ_prev   # Fill matrix with previous data
-#         pr = Progress(n_pts)                        # Setup the progress meter
-#         pts_per_thread = n_pts ÷ Threads.nthreads() # Calculate points per thread
-
-#         # Reorder the time steps
-#         thread_pts =
-#             reshape(1:(Threads.nthreads()*pts_per_thread), Threads.nthreads(), :)' |>
-#             vec |>
-#             collect
-
-#         Threads.@threads for ii in thread_pts
-#             indices1 = ii <= Γ_dim[2] ? (Γ_dim[1]+1:lmax+1) : (1:lmax+1)
-#             indices2 = ii <= Γ_dim[2] ? (Γ_dim[1]:lmax) : (0:lmax)
-#             Γ_mat[indices1, ii] = Γ(δ * ii, indices2, ωmax)
-#             next!(pr)
-#         end
-
-#         # Evaluate the remaining time steps
-#         if length(thread_pts) != n_pts
-#             Threads.@threads for ii in (length(thread_pts)+1:n_pts)
-#                 indices1 = ii <= Γ_dim[2] ? (Γ_dim[1]+1:lmax+1) : (1:lmax+1)
-#                 indices2 = ii <= Γ_dim[2] ? (Γ_dim[1]:lmax) : (0:lmax)
-#                 Γ_mat[indices1, ii] = Γ(δ * ii, indices2, ωmax)
-#                 next!(pr)
-#             end
-#         end
-#     end
-
-#     return ChainSystem(ωmax, δ, Γ_mat)
-# end
 
 # Mode amplitude
 function ζq(ωq, ωT)
@@ -348,11 +115,13 @@ end
 
 # Homogeneous displacement of the chain atom g at time step n given a set of ωs
 # and the corresponding ζs and ϕs as a sum of normal coordinates.
-function ρH(n, δ, ζs, ϕs, ωs, gs)
+function ρH(τ, ζs, ϕs, ωs, gs)
     n_ζ = length(ζs)
-    f = transpose(exp.(-1im * (2 * π * δ * n * ωs + ϕs)) / √(n_ζ) .* ζs)
-    r = [f * exp.(1im * 2 * π / n_ζ .* (1:n_ζ) * g) for g in gs]
-    return r
+    # Get the displacement of each mode ζ
+    f = transpose(exp.(-1im * (2 * π * τ * ωs + ϕs)) / √(n_ζ) .* ζs)
+    # Multiply vector of ζ's by the polarization matrix ε
+    res = [f * exp.(1im * 2 * π / n_ζ .* (1:n_ζ) * g) for g in gs]
+    return res
 end
 
 function motion_solver(
@@ -368,18 +137,17 @@ function motion_solver(
     τ::T where {T<:Real};
     threads::Bool = false,
     bias::T where {T<:Real} = 0,
-    hold::T where {T<:Real} = 0,
 )
     ωmax = system.ωmax              # Maximum chain frequency
-    δ = system.δ                    # Time step
     Γ_mat = system.Γ                # Memory term
+    δ = system.τs[2] - system.τs[1] # Time step
     n_pts = floor(τ / δ) |> Int     # Number of time steps
-    τs = δ .* (1:n_pts) |> collect  # Times
+    τs = system.τs[1:n_pts]         # Times
     nChain = size(tTraj.ρHs)[1]     # Number of chain particles for which the homogeneous motion is available
-    τ0_pts = max(floor(τ0 / δ), 1)  # Memory time points
     F_bias = bias / α               # Force due to the bias
+    τ0_pts = max(floor(τ0 / δ), 1)  # Memory time points
     # Even if τ0 == 0, we have to keep a single time point to make sure arrays work.
-    # For zero memory, the recoil contribution is dropped (see line 156)
+    # For zero memory, the recoil contribution is dropped
 
     # Check that the thermal trajectory is for the correct system
     if (ωmax != tTraj.ωmax || δ != tTraj.δ)
@@ -410,128 +178,83 @@ function motion_solver(
     ## Initial values
     σs[:, 1] = σ0
     σs[:, 2] = σ0 + δ .* σ_dot0
-    mass_flag = false
 
-    if threads == true
-        @showprogress for ii = 3:n_pts
-            nxt = ii        # Next time step index
-            curr = ii - 1   # Current time step index
-            # Calculate the forces on all the masses
-            U_pr = [dU_dρ(ρ - σ) for ρ in ρs[:, curr], σ in σs[:, curr]]
-            U_pr_chain = sum(U_pr, dims = 2) |> vec
-            U_pr_mob = -sum(U_pr, dims = 1) |> vec
-            # Find the indices of the chain masses where the force is larger than ϵ
-            idx = findall(x -> abs(x) > ϵ, U_pr_chain)
-            # For each of the impulses, get the appropriate slice of Γ_mat, multiply
-            # it by the impulse and use the result to modify the chain positions
-            steps_left = n_pts - curr
-            steps_per_thread = steps_left ÷ Threads.nthreads()
+    @showprogress for ii = 3:n_pts
+        nxt = ii        # Next time step index
+        curr = ii - 1   # Current time step index
+        # Calculate the forces on all the masses
+        U_pr = [dU_dρ(ρ - σ) for ρ in ρs[:, curr], σ in σs[:, curr]]
+        U_pr_chain = sum(U_pr, dims = 2) |> vec
+        U_pr_mob = -sum(U_pr, dims = 1) |> vec
+        # Find the indices of the chain masses where the force is larger than ϵ
+        idx = findall(x -> abs(x) > ϵ, U_pr_chain)
+
+        σs[:, nxt] =
+            -(2 * π * δ)^2 / μ .* U_pr_mob + 2 .* σs[:, curr] - σs[:, curr-1] +
+            (2 * π * δ)^2 / μ * F_bias .* ones(length(σ0))
+
+        steps_left = n_pts - curr               # Number of time steps remaining
+        step_memory = min(τ0_pts, steps_left)   # Number of steps for which ρs are affected by the impulse
+        if threads == true
+            steps_per_thread = step_memory ÷ Threads.nthreads() + 1
             step_alloc = [
-                (x*(steps_per_thread+1)+1):min(
-                    steps_left,
-                    (x + 1) * (steps_per_thread + 1),
-                ) for x = 0:Threads.nthreads()-1
+                (x*steps_per_thread+1):min(step_memory, (x + 1) * steps_per_thread) for
+                x = 0:Threads.nthreads()-1
             ]
             Threads.@threads for t = 1:Threads.nthreads()
                 for n in idx
                     view(ρs, :, curr .+ step_alloc[t]) .-=
-                        view(Γ_mat, nChain-n+1:2*nChain-n, step_alloc[t]) .* U_pr_chain[n]
+                        view(Γ_mat, nChain-n+1:2*nChain-n, step_alloc[t]) .*
+                        U_pr_chain[n] .* (τ0 != 0)
                 end
             end
-
-            if hold == 0 ||
-               (
-                   τs[ii] >= hold && isapprox(
-                       mod.(σs[:, curr], α),
-                       repeat([α / 2], length(σs[:, curr])),
-                       rtol = 1e-3,
-                   )
-               ) ||
-               mass_flag == true
-                mass_flag = true
-                σs[:, nxt] =
-                    -(2 * π * δ)^2 / μ .* U_pr_mob + 2 .* σs[:, curr] - σs[:, curr-1] +
-                    (2 * π * δ)^2 / μ * F_bias .* ones(length(σ0))
-            else
-                σs[:, nxt] = 2 .* σs[:, curr] - σs[:, curr-1]
-            end
-        end
-    else
-        for ii = 3:n_pts
-            nxt = ii        # Next time step index
-            curr = ii - 1   # Current time step index
-            # Calculate the forces on all the masses
-            U_pr = [dU_dρ(ρ - σ) for ρ in ρs[:, curr], σ in σs[:, curr]]
-            U_pr_chain = sum(U_pr, dims = 2) |> vec
-            U_pr_mob = -sum(U_pr, dims = 1) |> vec
-            # Find the indices of the chain masses where the force is larger than ϵ
-            idx = findall(x -> abs(x) > ϵ, U_pr_chain)
-            # For each of the impulses, get the appropriate slice of Γ_mat, multiply
-            # it by the impulse and use the result to modify the chain positions
+        else
             for n in idx
-                Γ_curr = view(Γ_mat, nChain-n+1:2*nChain-n, 1:min(τ0_pts, n_pts - ii + 1))
-                ρs_upd = view(ρs, :, nxt:nxt+size(Γ_curr)[2]-1)
-                ρs_upd .-= Γ_curr .* U_pr_chain[n]
-            end
-
-            if hold == 0 ||
-               (
-                   τs[ii] >= hold && isapprox(
-                       mod.(σs[:, curr], α),
-                       repeat([α / 2], length(σs[:, curr])),
-                       rtol = 0.01,
-                   )
-               ) ||
-               mass_flag == true
-                mass_flag = true
-                σs[:, nxt] =
-                    -(2 * π * δ)^2 / μ .* U_pr_mob + 2 .* σs[:, curr] - σs[:, curr-1] +
-                    (2 * π * δ)^2 / μ * F_bias .* ones(length(σ0))
-            else
-                σs[:, nxt] = 2 .* σs[:, curr] - σs[:, curr-1]
+                view(ρs, :, curr .+ (1:step_memory)) .-=
+                    view(Γ_mat, nChain-n+1:2*nChain-n, 1:step_memory) .* U_pr_chain[n] .*
+                    (τ0 != 0)
             end
         end
     end
-
     return SystemSolution(ωmax, μ, τs, τ0, α, Φ0, λ, σs, ρs, bias, tTraj.ωT)
 end
 
-# Analytic dissipation for Gaussian potential
-function Δ_analytic(v, Φ, λ, Ω)
-    z = (2 * π * λ / v)^2
-    return (
-        4 * π^3 * Φ^2 / v^2 *
-        z *
-        exp(-z * (Ω^2 + 1) / 2) *
-        (
-            besseli(0, z * (Ω^2 - 1) / 2) +
-            (Ω^2 - 1) / 2 * (besseli(0, z * (Ω^2 - 1) / 2) - besseli(1, z * (Ω^2 - 1) / 2))
-        )
-    )
-end
+# # Analytic dissipation for Gaussian potential
+# function Δ_analytic(v, Φ, λ, Ω)
+#     z = (2 * π * λ / v)^2
+#     return (
+#         4 * π^3 * Φ^2 / v^2 *
+#         z *
+#         exp(-z * (Ω^2 + 1) / 2) *
+#         (
+#             besseli(0, z * (Ω^2 - 1) / 2) +
+#             (Ω^2 - 1) / 2 * (besseli(0, z * (Ω^2 - 1) / 2) - besseli(1, z * (Ω^2 - 1) / 2))
+#         )
+#     )
+# end
 
-# Mean Delta with thermal fluctuations 
-function Δ_thermal_analytic(v, Φ, λ, Ω, ωT)
-    factor = π^2 * λ^2 * Φ^2 * √(π) / v / 2
+# # Mean Delta with thermal fluctuations 
+# function Δ_thermal_analytic(v, Φ, λ, Ω, ωT)
+#     factor = π^2 * λ^2 * Φ^2 * √(π) / v / 2
 
-    C_NN_func(τ) = C_corr(τ, 0, Ω, ωT)
-    # C_NN_func(τ) = 0
+#     C_NN_func(τ) = C_corr(τ, 0, Ω, ωT)
+#     # C_NN_func(τ) = 0
 
-    int_func(θ, τ) =
-        exp(2im * π * τ * ω(Ω, θ)) *
-        exp(-v^2 * τ^2 / (λ^2 + Complex(C_NN_func(0) - C_NN_func(τ))) / 4) *
-        (2(λ^2 + Complex(C_NN_func(0) - C_NN_func(τ))) - v^2 * τ^2) /
-        (λ^2 + Complex(C_NN_func(0) - C_NN_func(τ)))^(5 / 2)
+#     int_func(θ, τ) =
+#         exp(2im * π * τ * ω(Ω, θ)) *
+#         exp(-v^2 * τ^2 / (λ^2 + Complex(C_NN_func(0) - C_NN_func(τ))) / 4) *
+#         (2(λ^2 + Complex(C_NN_func(0) - C_NN_func(τ))) - v^2 * τ^2) /
+#         (λ^2 + Complex(C_NN_func(0) - C_NN_func(τ)))^(5 / 2)
 
-    function integrand(x)
-        f1(τ) = int_func(x, τ)
-        (sol, err) = quadgk(f1, -10, 10, atol = 1e-8)
-        return sol
-    end
+#     function integrand(x)
+#         f1(τ) = int_func(x, τ)
+#         (sol, err) = quadgk(f1, -10, 10, atol = 1e-8)
+#         return sol
+#     end
 
-    # res = quadgk(integrand, 0.0, π/2, atol = 1e-10)
+#     # res = quadgk(integrand, 0.0, π/2, atol = 1e-10)
 
-    res = hcubature(x -> int_func(x[1], x[2]), [0, -10], [π / 2, 10], atol = 1e-8)
+#     res = hcubature(x -> int_func(x[1], x[2]), [0, -10], [π / 2, 10], atol = 1e-8)
 
-    return factor * res[1] * 2 / π |> real
-end
+#     return factor * res[1] * 2 / π |> real
+# end
