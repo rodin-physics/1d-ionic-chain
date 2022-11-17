@@ -6,7 +6,7 @@ include("../../src/main.jl")
 ωmax = 10
 nChain = 100
 Φ0 = 2.0
-λ = 4.0 
+λ = 4.0
 
 n_sys = 500
 n_runs = 100
@@ -28,7 +28,7 @@ function Δ_numeric(σ_dot, σ0, Φ0, λ, system, tTraj)
     ρs = res.ρs
 
     # Find index closest to next midpoint; take the thermal motion into account
-    chain_idx = searchsortedlast(ρs[:,1], σs[1])
+    chain_idx = searchsortedlast(ρs[:, 1], σs[1])
     mod_val = mod(σs[1], res.α)
     mob_final = findmin(abs.(σs .- (ρs[chain_idx+1, :] .+ mod_val)))[2]
 
@@ -41,17 +41,22 @@ end
 function Δ_thermal(σ_dot, σ0, Φ0, λ, system, tTraj)
 
     function get_tTraj(ind, tTraj)
-        return ThermalTrajectory(tTraj.ωmax, tTraj.δ, tTraj.ρHs[ind:ind+nChain, :], tTraj.ωT)
+        return ThermalTrajectory(
+            tTraj.ωmax,
+            tTraj.δ,
+            tTraj.ρHs[ind:ind+nChain, :],
+            tTraj.ωT,
+        )
     end
-    nPts = length(1:(size(tTraj.ρHs)[1] - nChain))
+    nPts = length(1:(size(tTraj.ρHs)[1]-nChain))
     res = zeros(nPts)
     p = Progress(nPts)
-    Threads.@threads for ii in 1:(size(tTraj.ρHs)[1] - nChain)
+    Threads.@threads for ii = 1:(size(tTraj.ρHs)[1]-nChain)
         res[ii] = Δ_numeric(σ_dot, σ0, Φ0, λ, system, get_tTraj(ii, tTraj))
         next!(p)
-    end 
+    end
 
-   return res
+    return res
 end
 
 
@@ -88,7 +93,7 @@ end
 # end
 
 # writedlm("Delta_speed$(speed)_temp$(ωT)2.dat", Δs)
- 
+
 # tTraj = load_object("precomputed/rH/rH_ωmax10_d60_ωT$(ωT)_τ5_nmodes100000.jld2")
 # Δs = Δ_thermal(speed, 4.5 * α, Φ0, λ, system, tTraj)
 # writedlm("Delta_speed$(speed)_temp$(ωT)3.dat", Δs)
@@ -98,14 +103,29 @@ end
 
 Δs = readdlm("Delta_speed$(speed)_temp$(ωT)2.dat")
 
-fig = Figure(resolution=(1600, 1200), font="CMU Serif", fontsize=40, figure_padding = 30)
-ax1 = Axis(fig[1, 1], xlabel= "Number of Values", ylabel=L"\Delta", title = L"\omega_T = %$(ωT), \, \Phi_0 = %$(Φ0), \,\lambda = %$(λ), \, \dot{\sigma}_0 = %$(speed)")
+fig = Figure(
+    resolution = (1600, 1200),
+    font = "CMU Serif",
+    fontsize = 40,
+    figure_padding = 30,
+)
+ax1 = Axis(
+    fig[1, 1],
+    xlabel = "Number of Values",
+    ylabel = L"\Delta",
+    title = L"\omega_T = %$(ωT), \, \Phi_0 = %$(Φ0), \,\lambda = %$(λ), \, \dot{\sigma}_0 = %$(speed)",
+)
 
 test = map(nPts -> mean(Δs[1:nPts]), 1:100:length(Δs))
 append!(test, mean(Δs))
 scatter!(ax1, 1:length(test), test, markersize = 14)
 hlines!(ax1, [Δ_analytic(speed, Φ0, λ, ωmax)], linewidth = 3, color = my_black)
-hlines!(ax1, [Δ_thermal_analytic(speed, Φ0, λ, ωmax, ωT)], linewidth = 3, color = my_vermillion)
+hlines!(
+    ax1,
+    [Δ_thermal_analytic(speed, Φ0, λ, ωmax, ωT)],
+    linewidth = 3,
+    color = my_vermillion,
+)
 
 ylims!(ax1, 0.0, 0.03)
 

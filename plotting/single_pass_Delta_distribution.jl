@@ -6,7 +6,7 @@ include("../../src/main.jl")
 ωmax = 10
 nChain = 3
 Φ0 = 2.0
-λ = 4.0 
+λ = 4.0
 # Load memory kernel and thermal trajectory
 system = load_object("precomputed/systems/System_ωmax10_d60_l10000_τmax5.jld2")
 
@@ -21,7 +21,7 @@ function Δ_numeric(σ_dot, σ0, Φ0, λ, system, tTraj)
     ρs = res.ρs
 
     # Find index closest to next midpoint
-    chain_idx = searchsortedlast(ρs[:,1], σs[1])
+    chain_idx = searchsortedlast(ρs[:, 1], σs[1])
     mod_val = mod(σs[1], res.α)
     mob_final = findmin(abs.(σs .- (ρs[chain_idx+1, :] .+ mod_val)))[2]
 
@@ -34,17 +34,22 @@ end
 function Δ_thermal(σ_dot, σ0, Φ0, λ, system, tTraj)
 
     function get_tTraj(ind, tTraj)
-        return ThermalTrajectory(tTraj.ωmax, tTraj.δ, tTraj.ρHs[ind:ind+nChain, :], tTraj.ωT)
+        return ThermalTrajectory(
+            tTraj.ωmax,
+            tTraj.δ,
+            tTraj.ρHs[ind:ind+nChain, :],
+            tTraj.ωT,
+        )
     end
-    nPts = length(1:(size(tTraj.ρHs)[1] - nChain))
+    nPts = length(1:(size(tTraj.ρHs)[1]-nChain))
     res = zeros(nPts)
     p = Progress(nPts)
-    Threads.@threads for ii in 1:(size(tTraj.ρHs)[1] - nChain)
+    Threads.@threads for ii = 1:(size(tTraj.ρHs)[1]-nChain)
         res[ii] = Δ_numeric(σ_dot, σ0, Φ0, λ, system, get_tTraj(ii, tTraj))
         next!(p)
-    end 
+    end
 
-   return res
+    return res
 end
 
 ## Computation 
@@ -83,14 +88,45 @@ tTraj = load_object("precomputed/rH/rH_ωmax10_d60_ωT$(ωT)_τ5_nmodes100000.jl
 Δs = readdlm("data/Thermal/ωT25.0/delta_ωmax10_speed60.0_ωT25.0.dat") |> vec
 
 # ## Plotting 
-fig = Figure(resolution=(1200, 1200), font="CMU Serif", fontsize=40, figure_padding = 30)
-ax1 = Axis(fig[1, 1], xlabel=L"\Delta", ylabel="Frequency", title = L"\omega_T = %$(tTraj.ωT), \, \Phi_0 = %$(Φ0), \,\lambda = %$(λ), \, \dot{\sigma}_0 = %$(σdot0)")
+fig = Figure(
+    resolution = (1200, 1200),
+    font = "CMU Serif",
+    fontsize = 40,
+    figure_padding = 30,
+)
+ax1 = Axis(
+    fig[1, 1],
+    xlabel = L"\Delta",
+    ylabel = "Frequency",
+    title = L"\omega_T = %$(tTraj.ωT), \, \Phi_0 = %$(Φ0), \,\lambda = %$(λ), \, \dot{\sigma}_0 = %$(σdot0)",
+)
 
-hist!(ax1, Δs, bins = 24, normalization = :pdf, bar_labels = :values, label_formatter=x-> round(x, digits=2), label_size = 20, strokewidth = 0.5, strokecolor = (:black, 0.5), color = my_green)
+hist!(
+    ax1,
+    Δs,
+    bins = 24,
+    normalization = :pdf,
+    bar_labels = :values,
+    label_formatter = x -> round(x, digits = 2),
+    label_size = 20,
+    strokewidth = 0.5,
+    strokecolor = (:black, 0.5),
+    color = my_green,
+)
 
 pred_val = Δ_analytic(σdot0, Φ0, λ, ωmax)
-vlines!(ax1, [pred_val], color = my_black, label = "Analytic - $(round(pred_val, digits = 3))")
-vlines!(ax1, [mean(Δs)], color = my_vermillion, label = "Numerical Mean - $(round(mean(Δs), digits = 3))")
+vlines!(
+    ax1,
+    [pred_val],
+    color = my_black,
+    label = "Analytic - $(round(pred_val, digits = 3))",
+)
+vlines!(
+    ax1,
+    [mean(Δs)],
+    color = my_vermillion,
+    label = "Numerical Mean - $(round(mean(Δs), digits = 3))",
+)
 
 axislegend(ax1, labelsize = 40, position = :lt)
 ylims!(0, nothing)

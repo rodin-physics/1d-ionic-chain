@@ -6,14 +6,14 @@ include("../../src/main.jl")
 ωmax = 10
 nChain = 3
 Φ0 = 2.0
-λ = 10.0 
+λ = 10.0
 
 function Δ_per_temp(dir_name)
     filenames = filter(x -> x[1] !== '.', readdir(dir_name))
     speeds = Float32[]
-    Δs = Float32[] 
+    Δs = Float32[]
     sdevs = Float32[]
-    for file in filenames  
+    for file in filenames
         # Obtain mean and error bars 
         data = readdlm(joinpath(dir_name, file)) |> vec
         append!(Δs, mean(data))
@@ -35,18 +35,34 @@ colors = reverse([my_blue, my_green, my_vermillion, my_red, my_yellow])
 speeds = range(15, 30, length = 50)
 
 ## Plotting 
-fig = Figure(resolution=(1600, 1200), font="CMU Serif", fontsize=40, figure_padding = 30)
-ax1 = Axis(fig[1, 1], xlabel= L"\dot{\sigma}", ylabel=L"\Delta", title = L"\Phi_0 = %$(Φ0), \,\lambda = %$(λ), \, \alpha = %$(α)")
+fig = Figure(
+    resolution = (1600, 1200),
+    font = "CMU Serif",
+    fontsize = 40,
+    figure_padding = 30,
+)
+ax1 = Axis(
+    fig[1, 1],
+    xlabel = L"\dot{\sigma}",
+    ylabel = L"\Delta",
+    title = L"\Phi_0 = %$(Φ0), \,\lambda = %$(λ), \, \alpha = %$(α)",
+)
 
-for ωT in ωTs 
+for ωT in ωTs
     nPts = length(speeds)
     analytic_Δs = zeros(nPts)
     p = Progress(nPts)
     Threads.@threads for ii in eachindex(speeds)
-        analytic_Δs[ii] =  Δ_thermal_analytic(speeds[ii], Φ0, λ, ωmax, ωT)
+        analytic_Δs[ii] = Δ_thermal_analytic(speeds[ii], Φ0, λ, ωmax, ωT)
         next!(p)
     end
-    lines!(speeds, analytic_Δs, linewidth = 5, color = colors[findfirst(x -> x == ωT, ωTs)], label = L"\omega_T = %$(ωT)")
+    lines!(
+        speeds,
+        analytic_Δs,
+        linewidth = 5,
+        color = colors[findfirst(x -> x == ωT, ωTs)],
+        label = L"\omega_T = %$(ωT)",
+    )
 end
 
 # for ωT in ωTs 
@@ -66,5 +82,3 @@ axislegend(ax1, position = :rt)
 # ylims!(ax1, -0.05, 0.05)
 # save("Thermal_lambda10_low_speeds.pdf", fig)
 fig
-
-

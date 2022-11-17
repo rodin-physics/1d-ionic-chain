@@ -16,27 +16,39 @@ function precompute(ωmax, τmax, lmax, d)
     n_pts = floor(τmax / δ) |> Int
 
     # Read in files that have the correct ωmax and d
-    filenames = filter(x -> first(x) !== '.' && occursin("_ωmax$(ωmax)_", x) && occursin("_d$(d)_", x), readdir(joinpath(pwd(), "precomputed/systems/")))
+    filenames = filter(
+        x -> first(x) !== '.' && occursin("_ωmax$(ωmax)_", x) && occursin("_d$(d)_", x),
+        readdir(joinpath(pwd(), "precomputed/systems/")),
+    )
 
     # No precomputation files exist
     if isempty(filenames)
         res = mkChainSystem(ωmax, τmax, lmax, d, Matrix[])
-        return save_object("precomputed/systems/System_ωmax$(ωmax)_d$(d)_l$(lmax)_τmax$(τmax).jld2", res)
+        return save_object(
+            "precomputed/systems/System_ωmax$(ωmax)_d$(d)_l$(lmax)_τmax$(τmax).jld2",
+            res,
+        )
     end
 
     # Check if precomputation is necessary
-    size_elems = [load_object(joinpath("precomputed/systems/", ii)).Γ |> size for ii in filenames]
+    size_elems =
+        [load_object(joinpath("precomputed/systems/", ii)).Γ |> size for ii in filenames]
 
     if any(x -> (lmax <= x[1] && n_pts <= x[2]) == true, size_elems)
         error("A file containing a sufficient amount of precomputed values already exists")
     else
         # Return existing matrix with most number of elements already computed
-        diff_elems = map(x -> (lmax * n_pts) - min(lmax,x[1])*min(n_pts,x[2]), size_elems)
+        diff_elems =
+            map(x -> (lmax * n_pts) - min(lmax, x[1]) * min(n_pts, x[2]), size_elems)
 
-        Γ_prev = load_object(joinpath("precomputed/systems/", filenames[argmin(diff_elems)])).Γ
+        Γ_prev =
+            load_object(joinpath("precomputed/systems/", filenames[argmin(diff_elems)])).Γ
 
         res = mkChainSystem(ωmax, τmax, lmax, d, Γ_prev)
-        save_object("precomputed/systems/System_ωmax$(ωmax)_d$(d)_l$(lmax)_τmax$(τmax).jld2", res)
+        save_object(
+            "precomputed/systems/System_ωmax$(ωmax)_d$(d)_l$(lmax)_τmax$(τmax).jld2",
+            res,
+        )
     end
 end
 
@@ -75,14 +87,21 @@ for ωT in ωTs
     println("ωT is ", ωT)
     ζs = ζq.(ωs, ωT)
 
-    if (!isfile("precomputed/rH/rH_ωmax$(ωmax)_d$(d)_ωT$(ωT)_τ$(τmax)_nmodes$(n_modes).jld2"))
+    if (
+        !isfile(
+            "precomputed/rH/rH_ωmax$(ωmax)_d$(d)_ωT$(ωT)_τ$(τmax)_nmodes$(n_modes).jld2",
+        )
+    )
         # Populate each row of matrix
         gs = collect(1:lmax)
         full_res = @showprogress pmap(n -> real(ρH(n, δ, ζs, ϕs, ωs, gs)), 1:n_pts)
         full_res = reduce(hcat, full_res)
 
         res = ThermalTrajectory(ωmax, δ, full_res, ωT)
-        save_object("precomputed/rH/rH_ωmax$(ωmax)_d$(d)_ωT$(ωT)_τ$(τmax)_nmodes$(n_modes).jld2", res)
+        save_object(
+            "precomputed/rH/rH_ωmax$(ωmax)_d$(d)_ωT$(ωT)_τ$(τmax)_nmodes$(n_modes).jld2",
+            res,
+        )
     end
 
 end
