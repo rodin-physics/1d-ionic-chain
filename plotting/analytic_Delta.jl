@@ -1,84 +1,101 @@
-include("../../src/main.jl")
+include("../src/main.jl")
 
-## Parameters 
-α = 40
-μ = 1
+colors = [
+    my_vermillion,
+    my_orange,
+    my_green,
+    my_sky,
+    my_blue,
+    my_vermillion,
+    my_orange,
+    my_green,
+    my_sky,
+    my_blue,
+    my_red,
+]
+ωTs = [0, 1, 5, 10, 25, 50, 100, 250, 1000, 2500, 10000]
 ωmax = 10
-nChain = 3
-Φ0 = 2.0
-λ = 10.0
+data = [
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT1.0e-5.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT1.0.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT5.0.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT10.0.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT25.0.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT50.0.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT100.0.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT250.0.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT1000.0.jld2",
+    # "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT2500.0.jld2",
+    # "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT10000.0.jld2",
+]
 
-function Δ_per_temp(dir_name)
-    filenames = filter(x -> x[1] !== '.', readdir(dir_name))
-    speeds = Float32[]
-    Δs = Float32[]
-    sdevs = Float32[]
-    for file in filenames
-        # Obtain mean and error bars 
-        data = readdlm(joinpath(dir_name, file)) |> vec
-        append!(Δs, mean(data))
-        append!(sdevs, std(data))
+nPts = 6000
+vMin = 0.1
+vMax = 300
+vs = range(vMin, vMax, length = nPts) |> collect
 
-        # Parse the filename and get the speed 
-        names = filter(x -> x[1] == 's', split(file, "_"))
-        speed = parse(Float64, chopprefix(names[1], "speed"))
-        append!(speeds, speed)
-    end
-    return (speeds, Δs, sdevs)
-end
-
-
-
-colors = reverse([my_blue, my_green, my_vermillion, my_red, my_yellow])
-ωTs = reverse([0.0, 2.0, 5.0, 10.0, 25.0])
-
-speeds = range(15, 30, length = 50)
-
-## Plotting 
-fig = Figure(
-    resolution = (1600, 1200),
-    font = "CMU Serif",
-    fontsize = 40,
-    figure_padding = 30,
-)
+fig =
+    Figure(resolution = (1200, 800), font = "CMU Serif", fontsize = 40, figure_padding = 30)
 ax1 = Axis(
     fig[1, 1],
     xlabel = L"\dot{\sigma}",
-    ylabel = L"\Delta",
-    title = L"\Phi_0 = %$(Φ0), \,\lambda = %$(λ), \, \alpha = %$(α)",
+    ylabel = L"\dot{\sigma}\langle\Delta\rangle",
+    xscale = log10,
+    yscale = log10,
 )
-
-for ωT in ωTs
-    nPts = length(speeds)
-    analytic_Δs = zeros(nPts)
-    p = Progress(nPts)
-    Threads.@threads for ii in eachindex(speeds)
-        analytic_Δs[ii] = Δ_thermal_analytic(speeds[ii], Φ0, λ, ωmax, ωT)
-        next!(p)
-    end
+for ii in eachindex(data)
+    d = load_object(data[ii])
     lines!(
-        speeds,
-        analytic_Δs,
-        linewidth = 5,
-        color = colors[findfirst(x -> x == ωT, ωTs)],
-        label = L"\omega_T = %$(ωT)",
+        ax1,
+        (vs),
+        (vs) .* (d),
+        linewidth = 4,
+        color = colors[ii],
+        label = L"\omega_T = %$(ωTs[ii])",
     )
 end
 
-# for ωT in ωTs 
-#     dir_name = joinpath(pwd(), "data/Thermal/", "ωT$(ωT)/")
-#     (xs, ys, errors) = Δ_per_temp(dir_name)
-#     scatter!(ax1, xs, ys, markersize = 20, color = colors[findfirst(x -> x == ωT, ωTs)])
+α = 40
+μ = 1
+Φ0 = 1
+λ = 1
+ωmax = 10
 
-#     # errorbars!(ax, xs, ys, errors, whiskerwidth = 10, color = colors[findfirst(x -> x == ωT, ωTs)], linewidth = 4.0)
-# end
+nPts = 1000
+vMin = 2
+vMax = 300
+vs = range(vMin, vMax, length = nPts) |> collect
+
+noFluctuation = Δ_analytic.(vs, Φ0, λ, ωmax)
+lines!(ax1, (vs), (vs) .* (noFluctuation), linewidth = 4, color = my_black)
+
+axislegend(position = :rt, nbanks = 2)
 
 
 
-# lines!(ax1, speeds, Δ_analytic.(speeds, Φ0, λ, ωmax), label = "Non-Thermal", linewidth = 4 , color = my_black)
+vHigh = range(50, 300, length = 10)
+lines!(
+    ax1,
+    vHigh,
+    vHigh .* 2 * π^3 * Φ0^2 * (2 * π * λ)^2 .* (ωmax^2 + 1) ./ vHigh .^ 4,
+    linewidth = 4,
+    color = my_black,
+    linestyle = :dash,
+)
 
-axislegend(ax1, position = :rt)
-# xlims!(ax1, 16, 80)
-# ylims!(ax1, -0.05, 0.05)
-# save("Thermal_lambda10_low_speeds.pdf", fig)
+ylims!(ax1, (0.01, 1))
+# z = load_object("data/NumericalLossFast_Φ01_λ1_ωmax10_μ1_ωT1.0e-5.jld2")
+# # z = load_object("data/NumericalLossFast_Φ01_λ1_ωmax10_μ1_ωT1.0e-5.jld2")
+# mn = [mean(z[2][ii, :]) for ii = 1 : 6]
+# scatter!(ax1, log.(z[1]), log.(mn))
 fig
+# save("MeanLoss.pdf", fig)
+# l.attributes
+
+
+# d = [load_object(r)[1] for r in data]
+
+# scatter(log.(ωTs[2:end]), log.(d[2:end]))
+# # # ωTs
+# # log.(ωTs)
+# C_corr(0,0,10,2*pi * 10)

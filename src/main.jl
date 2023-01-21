@@ -32,7 +32,7 @@ my_black = colorant"rgba(0, 0, 0, 1.0)"
 struct ChainSystem
     ωmax::Float64               # Largest mode frequency
     τs::Vector{Float64}         # Time steps
-    ls::Vector{Int}             # Chain mass separation
+    ls::Vector{Int}             # Chain mass indices
     Γ::Matrix{Float64}          # Response array
 end
 
@@ -59,22 +59,22 @@ end
 
 ## Functions
 # Frequency as a function of momentum
-@inline function ω(ωmax, x)
-    return sqrt(1 + (ωmax^2 - 1) * sin(x)^2)
+@inline function ω(ωmax, θ)
+    return sqrt(1 + (ωmax^2 - 1) * sin(θ)^2)
 end
 
 # Chain recoil function
 function Γ(τs, ls, ωmax)
-    int_fun(x) = cos.(2 * x * ls) * sin.(2 * π * τs * ω(ωmax, x))' / ω(ωmax, x)
+    int_fun(θ) = cos.(2 * θ * ls) * sin.(2 * π * τs * ω(ωmax, θ))' / ω(ωmax, θ)
     res = quadgk(int_fun, 0, π / 2, atol = 1e-8)
     return (res[1] * 2 / π)
 end
 
 # Covariance matrix between chain mass displacements
 function C_corr(τs, ls, ωmax, ωT)
-    int_fun(x) =
-        cos.(2 * x * ls) * cos.(2 * π * τs * ω(ωmax, x))' / ω(ωmax, x) *
-        coth(ω(ωmax, x) / 2 / ωT)
+    int_fun(θ) =
+        cos.(2 * θ * ls) * cos.(2 * π * τs * ω(ωmax, θ))' / ω(ωmax, θ) *
+        coth(ω(ωmax, θ) / 2 / ωT)
     res = quadgk(int_fun, 0, π / 2, atol = 1e-8)
     return (res[1] / π)
 end
@@ -113,7 +113,7 @@ function ζq(ωq, ωT)
     return res
 end
 
-# Homogeneous displacement of the chain atom g at time step n given a set of ωs
+# Homogeneous displacement of the chain atoms gs at time τ given a set of ωs
 # and the corresponding ζs and ϕs as a sum of normal coordinates.
 function ρH(τ, ζs, ϕs, ωs, gs)
     n_ζ = length(ζs)
@@ -179,7 +179,8 @@ function motion_solver(
     σs[:, 1] = σ0
     σs[:, 2] = σ0 + δ .* σ_dot0
 
-    @showprogress for ii = 3:n_pts
+    for ii = 3:n_pts
+        # @showprogress for ii = 3:n_pts
         nxt = ii        # Next time step index
         curr = ii - 1   # Current time step index
         # Calculate the forces on all the masses
@@ -218,43 +219,3 @@ function motion_solver(
     end
     return SystemSolution(ωmax, μ, τs, τ0, α, Φ0, λ, σs, ρs, bias, tTraj.ωT)
 end
-
-# # Analytic dissipation for Gaussian potential
-# function Δ_analytic(v, Φ, λ, Ω)
-#     z = (2 * π * λ / v)^2
-#     return (
-#         4 * π^3 * Φ^2 / v^2 *
-#         z *
-#         exp(-z * (Ω^2 + 1) / 2) *
-#         (
-#             besseli(0, z * (Ω^2 - 1) / 2) +
-#             (Ω^2 - 1) / 2 * (besseli(0, z * (Ω^2 - 1) / 2) - besseli(1, z * (Ω^2 - 1) / 2))
-#         )
-#     )
-# end
-
-# # Mean Delta with thermal fluctuations 
-# function Δ_thermal_analytic(v, Φ, λ, Ω, ωT)
-#     factor = π^2 * λ^2 * Φ^2 * √(π) / v / 2
-
-#     C_NN_func(τ) = C_corr(τ, 0, Ω, ωT)
-#     # C_NN_func(τ) = 0
-
-#     int_func(θ, τ) =
-#         exp(2im * π * τ * ω(Ω, θ)) *
-#         exp(-v^2 * τ^2 / (λ^2 + Complex(C_NN_func(0) - C_NN_func(τ))) / 4) *
-#         (2(λ^2 + Complex(C_NN_func(0) - C_NN_func(τ))) - v^2 * τ^2) /
-#         (λ^2 + Complex(C_NN_func(0) - C_NN_func(τ)))^(5 / 2)
-
-#     function integrand(x)
-#         f1(τ) = int_func(x, τ)
-#         (sol, err) = quadgk(f1, -10, 10, atol = 1e-8)
-#         return sol
-#     end
-
-#     # res = quadgk(integrand, 0.0, π/2, atol = 1e-10)
-
-#     res = hcubature(x -> int_func(x[1], x[2]), [0, -10], [π / 2, 10], atol = 1e-8)
-
-#     return factor * res[1] * 2 / π |> real
-# end
