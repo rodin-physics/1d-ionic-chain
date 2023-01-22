@@ -16,8 +16,7 @@ using DelimitedFiles
 using HCubature
 
 ## Parameters
-η = 1e-12                       # Small number
-ϵ = 1e-20
+ϵ = 1e-20       # Minimum energy cutoff
 ## Friendly colors
 my_red = colorant"rgba(204, 121, 167, 1.0)"
 my_vermillion = colorant"rgba(213, 94, 0, 1.0)"
@@ -31,8 +30,7 @@ my_black = colorant"rgba(0, 0, 0, 1.0)"
 ## Types
 struct ChainSystem
     ωmax::Float64               # Largest mode frequency
-    τs::Vector{Float64}         # Time steps
-    ls::Vector{Int}             # Chain mass indices
+    δ::Float64                  # Timestep
     Γ::Matrix{Float64}          # Response array
 end
 
@@ -80,8 +78,9 @@ function C_corr(τs, ls, ωmax, ωT)
 end
 
 # Precompute recoil term
-function mkChainSystem(τmin, τmax, δ, ls, ωmax; batch_size = 100)
-    τs = range(τmin, τmax, step = δ)
+function mkChainSystem(ωmax, τmax, lmax, δ; batch_size = 100)
+    τs = range(0, τmax, step = δ)
+    ls = 0:lmax
     Γ_mat = zeros(length(ls), length(τs))       # Preallocate Γ matrix
 
     # Reorder the time steps so that the load is equal for every thread
@@ -101,13 +100,14 @@ function mkChainSystem(τmin, τmax, δ, ls, ωmax; batch_size = 100)
         end
     end
 
-    return ChainSystem(ωmax, τs, ls, Γ_mat)
+    return ChainSystem(ωmax, δ, Γ_mat)
 end
 
 # Mode amplitude
 function ζq(ωq, ωT)
     # Subtract a small number from p. The reason is that for low ωT, p ≈ 1,
     # causing issues with the rand() generator
+    η = 1e-12
     n = rand(Geometric(1 - exp(-ωq / ωT) - η))
     res = √(n + 1 / 2) * √(2 / ωq)
     return res
@@ -137,12 +137,13 @@ function motion_solver(
     τ::T where {T<:Real};
     threads::Bool = false,
     bias::T where {T<:Real} = 0,
+    box::Tuple{T,T} where {T<:Real} = (-Inf, Inf),
 )
     ωmax = system.ωmax              # Maximum chain frequency
     Γ_mat = system.Γ                # Memory term
-    δ = system.τs[2] - system.τs[1] # Time step
+    δ = system.δ                    # Time step
     n_pts = floor(τ / δ) |> Int     # Number of time steps
-    τs = system.τs[1:n_pts]         # Times
+    τs = δ .* (1:n_pts) |> collect  # Times
     nChain = size(tTraj.ρHs)[1]     # Number of chain particles for which the homogeneous motion is available
     F_bias = bias / α               # Force due to the bias
     τ0_pts = max(floor(τ0 / δ), 1)  # Memory time points
@@ -178,9 +179,9 @@ function motion_solver(
     ## Initial values
     σs[:, 1] = σ0
     σs[:, 2] = σ0 + δ .* σ_dot0
-
-    for ii = 3:n_pts
-        # @showprogress for ii = 3:n_pts
+    σ_dot = σ_dot0
+    # for ii = 3:n_pts
+    @showprogress for ii = 3:n_pts
         nxt = ii        # Next time step index
         curr = ii - 1   # Current time step index
         # Calculate the forces on all the masses
@@ -190,9 +191,23 @@ function motion_solver(
         # Find the indices of the chain masses where the force is larger than ϵ
         idx = findall(x -> abs(x) > ϵ, U_pr_chain)
 
+        # σs[:, nxt] =
+        #     -(2 * π * δ)^2 / μ .* U_pr_mob + 2 .* σs[:, curr] - σs[:, curr-1] +
+        #     (2 * π * δ)^2 / μ * F_bias .* ones(length(σ0))
+
         σs[:, nxt] =
-            -(2 * π * δ)^2 / μ .* U_pr_mob + 2 .* σs[:, curr] - σs[:, curr-1] +
+            σs[:, curr] +
+            δ .* σ_dot +
+            -(2 * π * δ)^2 / μ .* U_pr_mob +
             (2 * π * δ)^2 / μ * F_bias .* ones(length(σ0))
+
+        σ_dot = (σs[:, nxt] - σs[:, curr]) / δ
+
+        for particle in eachindex(σ_dot)
+            if (σs[particle, nxt] < box[1] || σs[particle, nxt] > box[2])
+                σ_dot[particle] = -σ_dot[particle]
+            end
+        end
 
         steps_left = n_pts - curr               # Number of time steps remaining
         step_memory = min(τ0_pts, steps_left)   # Number of steps for which ρs are affected by the impulse

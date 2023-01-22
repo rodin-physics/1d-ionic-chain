@@ -1,6 +1,7 @@
 include("../src/main.jl")
 
-# Potential broadening
+# POTENTIAL BROADENING
+
 ωmax = 10
 nτs = 1000
 τmin = 0
@@ -8,7 +9,7 @@ nτs = 1000
 τs = range(τmin, τmax, length = nτs)
 ωTs = [0, 1, 5, 10]
 
-colors = [my_vermillion, my_orange, my_green, my_sky, my_blue]
+colors = [my_vermillion, my_orange, my_green, my_sky]
 
 fig = Figure(
     resolution = (1200, 800),
@@ -16,6 +17,7 @@ fig = Figure(
     fontsize = 40,
     figure_padding = 30,
 )
+
 ax1 = Axis(
     fig[1, 1],
     xlabel = L"\tau",
@@ -71,9 +73,8 @@ lines!(
 
 axislegend(ax1, position = :rt, orientation = :horizontal)
 save("Broadening_parameter.pdf", fig)
-# fig
 
-#  Analytic Delta
+#  ANALYTIC DELTA
 α = 40
 μ = 1
 Φ0 = 1
@@ -98,20 +99,13 @@ end
 colors = [my_red, my_vermillion, my_orange, my_green, my_sky, my_blue]
 
 data = [
-    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT1.0e-5.jld2",
-    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT1.0.jld2",
-    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT5.0.jld2",
-    # "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT10.0.jld2",
-    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT25.0.jld2",
-    # "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT50.0.jld2",
-    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT100.0.jld2",
-    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT250.0.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT0.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT1.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT5.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT25.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT100.jld2",
+    "data/AnalyticLoss_Φ01_λ1_ωmax10_ωT250.jld2",
 ]
-
-nPts = 6000
-vMin = 0.1
-vMax = 300
-vs = range(vMin, vMax, length = nPts) |> collect
 
 fig = Figure(
     resolution = (1200, 800),
@@ -138,8 +132,8 @@ for ii in eachindex(data)
     d = load_object(data[ii])
     lines!(
         ax1,
-        (vs),
-        (vs) .* (d),
+        d[1],
+        d[1] .* d[2],
         linewidth = 4,
         color = colors[ii],
         label = L"\omega_T = %$(ωTs[ii])",
@@ -165,10 +159,9 @@ lines!(
     color = my_black,
     linestyle = :dash,
 )
-
 save("Mean_loss.pdf", fig)
 
-# Broadened potential
+# BROADENED POTENTIAL INTEGRAL
 nτs = 1000
 τmax = 10
 τs = range(0, τmax, length = nτs)
@@ -207,8 +200,6 @@ end
 axislegend(position = :rt, orientation = :vertical, nbanks = 3)
 
 save("Phi_prime_integral.pdf", fig)
-
-
 
 # function Φ_broad(x, λ, τ, ωT)
 #     C = C_corr(0, 0, ωmax, ωT) - C_corr(τ, 0, ωmax, ωT)
@@ -273,3 +264,6 @@ save("Phi_prime_integral.pdf", fig)
 
 
 # @time quadgk(x -> Φ_broad(x, λ, 0, 1), -Inf, Inf)
+# Makie.current_default_theme()
+
+# Makie.to_font("Times New Roman Italic")
