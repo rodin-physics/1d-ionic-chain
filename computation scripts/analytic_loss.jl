@@ -48,7 +48,7 @@ for ωT in ωTs
             next!(pr)
         end
         save_object(
-            "data/AnalyticLoss_Φ0$(Φ0)_λ$(λ)_ωmax$(ωmax)_ωT$(ωT).jld2",
+            "data/AnalyticLoss/AnalyticLoss_Φ0$(Φ0)_λ$(λ)_ωmax$(ωmax)_ωT$(ωT).jld2",
             (vs, result),
         )
     end

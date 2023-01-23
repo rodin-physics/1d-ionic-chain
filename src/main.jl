@@ -17,7 +17,7 @@ using HCubature
 using Random
 
 ## Parameters
-ϵ = 1e-20       # Minimum energy cutoff
+ϵ = 1e-12       # Minimum energy cutoff
 ## Friendly colors
 my_red = colorant"rgba(204, 121, 167, 1.0)"
 my_vermillion = colorant"rgba(213, 94, 0, 1.0)"

@@ -1,35 +1,35 @@
 include("main.jl")
 
-τmax = 5                        # Simulation time
-δ = (1 / ωmax) / d              # Time step
-n_pts = floor(τmax / δ) |> Int  # Number of time steps given t_max and δ
-n_modes = 100000                # Number of chain masses for simulating ρ0
+# τmax = 5                        # Simulation time
+# δ = (1 / ωmax) / d              # Time step
+# n_pts = floor(τmax / δ) |> Int  # Number of time steps given t_max and δ
+# n_modes = 100000                # Number of chain masses for simulating ρ0
 
-qa_s = 2 * pi .* (1:n_modes) / n_modes
-ωs = ω.(ωmax, qa_s ./ 2)
+# qa_s = 2 * pi .* (1:n_modes) / n_modes
+# ωs = ω.(ωmax, qa_s ./ 2)
 
-n_ζ = length(ζs)
-ε = reduce(hcat, [exp.(1im * 2 * π / n_ζ .* (1:n_ζ) * g) for g = 1:lmax])
+# n_ζ = length(ζs)
+# ε = reduce(hcat, [exp.(1im * 2 * π / n_ζ .* (1:n_ζ) * g) for g = 1:lmax])
 
-Random.seed!(150)
-ϕs = 2 * π * rand(n_modes)
-ζs = ζq.(ωs, ωT)
-# Range of temperatures
-ωTs = [0.0, 2.0, 5.0, 10.0]
+# Random.seed!(150)
+# ϕs = 2 * π * rand(n_modes)
+# ζs = ζq.(ωs, ωT)
+# # Range of temperatures
+# ωTs = [0.0, 2.0, 5.0, 10.0]
 
-@time ρH(1000, ζs, ϕs, ωs, ε)
-@time ρH_TEST(1000, ζs, ϕs, ωs, ε)
+# @time ρH(1000, ζs, ϕs, ωs, ε)
+# @time ρH_TEST(1000, ζs, ϕs, ωs, ε)
 
 
-function ρH_TEST(τ, ζs, ϕs, ωs, ε)
-    n_ζ = length(ζs)
-    # Get the displacement of each mode ζ
-    f = transpose(exp.(-1im * (2 * π * τ * ωs + ϕs)) / √(n_ζ) .* ζs)
-    # Multiply vector of ζ's by the polarization matrix ε
-    res = f * ε
-    return res
-end
-a
+# function ρH_TEST(τ, ζs, ϕs, ωs, ε)
+#     n_ζ = length(ζs)
+#     # Get the displacement of each mode ζ
+#     f = transpose(exp.(-1im * (2 * π * τ * ωs + ϕs)) / √(n_ζ) .* ζs)
+#     # Multiply vector of ζ's by the polarization matrix ε
+#     res = f * ε
+#     return res
+# end
+# a
 # system = load_object("precomputed/systems/System_ωmax10_d60_l300.jld2")
 # d = 60
 # τ = 100                             # Simulation time

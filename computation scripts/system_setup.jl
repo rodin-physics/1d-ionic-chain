@@ -42,7 +42,7 @@ for ωT in ωTs
         traj = ThermalTrajectory(ωmax, δ, res, ωT)
         save_object(
             "precomputed/rH/rH_ωmax$(ωmax)_d$(d)_ωT$(ωT)_τ$(τmax)_l$(lmax).jld2",
-            res,
+            traj,
         )
     end
 
