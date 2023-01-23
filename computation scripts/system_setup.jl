@@ -11,59 +11,39 @@ if (!isfile("precomputed/systems/System_ωmax$(ωmax)_d$(d)_l$(lmax).jld2"))
     save_object("precomputed/systems/System_ωmax$(ωmax)_d$(d)_l$(lmax).jld2", res)
 end
 
-# mkChainSystem(ωmax, τmax, lmax, δ; batch_size = 100)
+## Precompute the thermal trajectories
+τmax = 1000                     # Simulation time
+δ = (1 / ωmax) / d              # Time step
+n_pts = floor(τmax / δ) |> Int  # Number of time steps given t_max and δ
+n_modes = 10000                 # Number of chain masses for simulating ρ0
 
-# ωmax, τmax, lmax, δ
-# precompute(ωmax, τmax, lmax, d)
+qa_s = 2 * pi .* (1:n_modes) / n_modes
+ωs = ω.(ωmax, qa_s ./ 2)
+lmax = 300
+ε = reduce(hcat, [exp.(1im * 2 * π / n_modes .* (1:n_modes) * g) for g = 1:lmax])
 
-## Prepare the ultrafine ChainSystem's by calculating the recoil term
-# d = 6000     # Number of time steps in the fastest chain mode
-# τmax = 20    # Simulation time
-# ωmax = 10    # Maximum frequency
-# lmax = 20    # Number of chain atoms tracked
-#
-# if (!isfile("precomputed/systems/System_ωmax$(ωmax)_d$(d)_l$(lmax).jld2"))
-#     res = mkChainSystem(ωmax, τmax, lmax, d)
-#     save_object("precomputed/systems/System_ωmax$(ωmax)_d$(d)_l$(lmax).jld2", res)
-# end
+# Range of temperatures
+ωTs = [0, 1, 2, 5, 10, 25, 50, 100, 250]
 
-# precompute(ωmax, τmax, lmax, d)
+Random.seed!(150)
+for ωT in ωTs
+    println("ωT is ", ωT)
+    ζs = ζq.(ωs, ωT)
+    ϕs = 2 * π * rand(n_modes)
+    if (!isfile("precomputed/rH/rH_ωmax$(ωmax)_d$(d)_ωT$(ωT)_τ$(τmax)_l$(lmax).jld2"))
+        res = zeros(lmax, n_pts)
+        pr = Progress(n_pts)
 
-# println("Calculating thermal trajectories")
-# ## Precompute the thermal trajectories
-# τmax = 5                         # Simulation time
-# δ = (1 / ωmax) / d              # Time step
-# n_pts = floor(τmax / δ) |> Int  # Number of time steps given t_max and δ
-# n_modes = 100000                  # Number of chain masses for simulating ρ0
+        Threads.@threads for n = 1:n_pts
+            res[:, n] = ρH(n * δ, ζs, ϕs, ωs, ε) |> real
+            next!(pr)
+        end
 
-# qa_s = 2 * pi .* (1:n_modes) / n_modes
-# ωs = ω.(ωmax, qa_s ./ 2)
+        traj = ThermalTrajectory(ωmax, δ, res, ωT)
+        save_object(
+            "precomputed/rH/rH_ωmax$(ωmax)_d$(d)_ωT$(ωT)_τ$(τmax)_l$(lmax).jld2",
+            res,
+        )
+    end
 
-# Random.seed!(150)
-# ϕs = 2 * π * rand(n_modes)
-
-# # Range of temperatures
-# ωTs = [0.0, 2.0, 5.0, 10.0]
-
-# for ωT in ωTs
-#     println("ωT is ", ωT)
-#     ζs = ζq.(ωs, ωT)
-
-#     if (
-#         !isfile(
-#             "precomputed/rH/rH_ωmax$(ωmax)_d$(d)_ωT$(ωT)_τ$(τmax)_nmodes$(n_modes).jld2",
-#         )
-#     )
-#         # Populate each row of matrix
-#         gs = collect(1:lmax)
-#         full_res = @showprogress pmap(n -> real(ρH(n, δ, ζs, ϕs, ωs, gs)), 1:n_pts)
-#         full_res = reduce(hcat, full_res)
-
-#         res = ThermalTrajectory(ωmax, δ, full_res, ωT)
-#         save_object(
-#             "precomputed/rH/rH_ωmax$(ωmax)_d$(d)_ωT$(ωT)_τ$(τmax)_nmodes$(n_modes).jld2",
-#             res,
-#         )
-#     end
-
-# end
+end

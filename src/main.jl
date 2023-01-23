@@ -14,6 +14,7 @@ using Roots
 using KernelDensity
 using DelimitedFiles
 using HCubature
+using Random
 
 ## Parameters
 ϵ = 1e-20       # Minimum energy cutoff
@@ -113,14 +114,14 @@ function ζq(ωq, ωT)
     return res
 end
 
-# Homogeneous displacement of the chain atoms gs at time τ given a set of ωs
-# and the corresponding ζs and ϕs as a sum of normal coordinates.
-function ρH(τ, ζs, ϕs, ωs, gs)
+# Homogeneous displacement of the chain atoms at time τ given a set of ωs
+# and the corresponding ζs and ϕs
+function ρH(τ, ζs, ϕs, ωs, ε)
     n_ζ = length(ζs)
     # Get the displacement of each mode ζ
     f = transpose(exp.(-1im * (2 * π * τ * ωs + ϕs)) / √(n_ζ) .* ζs)
     # Multiply vector of ζ's by the polarization matrix ε
-    res = [f * exp.(1im * 2 * π / n_ζ .* (1:n_ζ) * g) for g in gs]
+    res = f * ε
     return res
 end
 

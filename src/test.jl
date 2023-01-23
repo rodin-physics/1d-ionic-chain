@@ -1,29 +1,59 @@
 include("main.jl")
 
-system = load_object("precomputed/systems/System_ωmax10_d60_l300.jld2")
-d = 60
-τ = 100                             # Simulation time
-δ = system.δ                       # Time step
-α = 40                              # Distance between chain atoms
-μ = 1
-σ0 = [Int(10.5 * α)]
-n_pts = τ / δ |> floor |> Int
-nChain = 20
-ρHs = zeros(nChain, n_pts)
-tTraj = ThermalTrajectory(system.ωmax, δ, ρHs, nothing)
-mem = Inf
+τmax = 5                        # Simulation time
+δ = (1 / ωmax) / d              # Time step
+n_pts = floor(τmax / δ) |> Int  # Number of time steps given t_max and δ
+n_modes = 100000                # Number of chain masses for simulating ρ0
 
-bias = 0.0
+qa_s = 2 * pi .* (1:n_modes) / n_modes
+ωs = ω.(ωmax, qa_s ./ 2)
 
-Φ0 = 2.5
-λ = 1
-σdot0 = [25]
+n_ζ = length(ζs)
+ε = reduce(hcat, [exp.(1im * 2 * π / n_ζ .* (1:n_ζ) * g) for g = 1:lmax])
 
-res =
-    motion_solver(system, Φ0, λ, α, σ0, σdot0, μ, tTraj, mem, τ; box = (4.5 * α, 15.5 * α))
-lines(res.τs, res.σs[1, :])
-res.σs
-z
+Random.seed!(150)
+ϕs = 2 * π * rand(n_modes)
+ζs = ζq.(ωs, ωT)
+# Range of temperatures
+ωTs = [0.0, 2.0, 5.0, 10.0]
+
+@time ρH(1000, ζs, ϕs, ωs, ε)
+@time ρH_TEST(1000, ζs, ϕs, ωs, ε)
+
+
+function ρH_TEST(τ, ζs, ϕs, ωs, ε)
+    n_ζ = length(ζs)
+    # Get the displacement of each mode ζ
+    f = transpose(exp.(-1im * (2 * π * τ * ωs + ϕs)) / √(n_ζ) .* ζs)
+    # Multiply vector of ζ's by the polarization matrix ε
+    res = f * ε
+    return res
+end
+a
+# system = load_object("precomputed/systems/System_ωmax10_d60_l300.jld2")
+# d = 60
+# τ = 100                             # Simulation time
+# δ = system.δ                       # Time step
+# α = 40                              # Distance between chain atoms
+# μ = 1
+# σ0 = [Int(10.5 * α)]
+# n_pts = τ / δ |> floor |> Int
+# nChain = 20
+# ρHs = zeros(nChain, n_pts)
+# tTraj = ThermalTrajectory(system.ωmax, δ, ρHs, nothing)
+# mem = Inf
+
+# bias = 0.0
+
+# Φ0 = 2.5
+# λ = 1
+# σdot0 = [25]
+
+# res =
+#     motion_solver(system, Φ0, λ, α, σ0, σdot0, μ, tTraj, mem, τ; box = (4.5 * α, 15.5 * α))
+# lines(res.τs, res.σs[1, :])
+# res.σs
+# z
 # function full_traj(param)
 #     println(param)
 #     Φ0 = param[1]
