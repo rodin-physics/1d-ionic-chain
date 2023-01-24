@@ -23,17 +23,18 @@ Random.seed!(120)
 σdot0 = zeros(nParticles)
 
 tTraj = [
-    load_object("precomputed/rH/rH_ωmax10_d60_ωT0_τ1000_l300.jld2"),
-    load_object("precomputed/rH/rH_ωmax10_d60_ωT1_τ1000_l300.jld2"),
-    load_object("precomputed/rH/rH_ωmax10_d60_ωT2_τ1000_l300.jld2"),
-    load_object("precomputed/rH/rH_ωmax10_d60_ωT5_τ1000_l300.jld2"),
-    load_object("precomputed/rH/rH_ωmax10_d60_ωT10_τ1000_l300.jld2"),
-    load_object("precomputed/rH/rH_ωmax10_d60_ωT25_τ1000_l300.jld2"),
-    load_object("precomputed/rH/rH_ωmax10_d60_ωT100_τ1000_l300.jld2"),
-    load_object("precomputed/rH/rH_ωmax10_d60_ωT250_τ1000_l300.jld2"),
+    "precomputed/rH/rH_ωmax10_d60_ωT0_τ1000_l300.jld2",
+    "precomputed/rH/rH_ωmax10_d60_ωT1_τ1000_l300.jld2",
+    "precomputed/rH/rH_ωmax10_d60_ωT2_τ1000_l300.jld2",
+    "precomputed/rH/rH_ωmax10_d60_ωT5_τ1000_l300.jld2",
+    "precomputed/rH/rH_ωmax10_d60_ωT10_τ1000_l300.jld2",
+    "precomputed/rH/rH_ωmax10_d60_ωT25_τ1000_l300.jld2",
+    "precomputed/rH/rH_ωmax10_d60_ωT100_τ1000_l300.jld2",
+    "precomputed/rH/rH_ωmax10_d60_ωT250_τ1000_l300.jld2",
 ]
 
-Threads.@threads for tr in tTraj
+for traj in tTraj
+    tr = load_object(traj)
     if (!isfile("data/Box/BoxMultiple_τ0$(τ0)_λ$(λ)_Φ0$(Φ0)_ωT$(tr.ωT)_τ$(τ).jld2"))
         # Keep only a portion of the thermal trajectory
         tr = ThermalTrajectory(tr.ωmax, tr.δ, tr.ρHs[1:box_size+20, :], tr.ωT)
@@ -50,6 +51,7 @@ Threads.@threads for tr in tTraj
             τ0,
             τ;
             box = (left_boundary, right_boundary),
+            threads = true,
         )
         save_object("data/Box/BoxMultiple_τ0$(τ0)_λ$(λ)_Φ0$(Φ0)_ωT$(tr.ωT)_τ$(τ).jld2", res)
     end

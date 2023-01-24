@@ -181,6 +181,7 @@ function motion_solver(
     σs[:, 1] = σ0
     σs[:, 2] = σ0 + δ .* σ_dot0
     σ_dot = σ_dot0
+    U_pr = zeros(nChain, length(σ0))
     # for ii = 3:n_pts
     @showprogress for ii = 3:n_pts
         nxt = ii        # Next time step index
@@ -192,18 +193,12 @@ function motion_solver(
         # Find the indices of the chain masses where the force is larger than ϵ
         idx = findall(x -> abs(x) > ϵ, U_pr_chain)
 
-        # σs[:, nxt] =
-        #     -(2 * π * δ)^2 / μ .* U_pr_mob + 2 .* σs[:, curr] - σs[:, curr-1] +
-        #     (2 * π * δ)^2 / μ * F_bias .* ones(length(σ0))
-
         σs[:, nxt] =
             σs[:, curr] +
             δ .* σ_dot +
-            -(2 * π * δ)^2 / μ .* U_pr_mob +
-            (2 * π * δ)^2 / μ * F_bias .* ones(length(σ0))
+            -(2 * π * δ)^2 / μ .* (U_pr_mob - F_bias .* ones(length(σ0)))
 
         σ_dot = (σs[:, nxt] - σs[:, curr]) / δ
-
         for particle in eachindex(σ_dot)
             if (σs[particle, nxt] < box[1] || σs[particle, nxt] > box[2])
                 σ_dot[particle] = -σ_dot[particle]
