@@ -23,7 +23,7 @@ lmax = 300
 ε = reduce(hcat, [exp.(1im * 2 * π / n_modes .* (1:n_modes) * g) for g = 1:lmax])
 
 # Range of temperatures
-ωTs = [0, 1, 2, 5, 10, 25, 50, 100, 250]
+ωTs = [0, 1, 2, 5, 10, 15, 25, 50, 100, 250]
 
 Random.seed!(150)
 for ωT in ωTs

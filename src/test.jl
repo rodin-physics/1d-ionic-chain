@@ -1,17 +1,61 @@
 include("main.jl")
 
-r = load_object("data/Box/Box_τ010_λ1_Φ07_ωT5.0_τ1000.jld2")
+r = load_object("data/Box/BoxMultiple_τ010_λ1_Φ07_ωT1.0_τ1000.jld2")
 
+nParticles = length(σs[:, 1])
+traj = zeros(size(r.σs))
+for ii = 1:nParticles
+    tr = r.σs[ii, :]
+    for st = 2:lastindex(tr)
+        if (tr[st] - tr[st-1]) > 0.9 * (right_boundary - left_boundary)
+            tr[st:end] = tr[st:end] .- (right_boundary - left_boundary)
+        elseif (tr[st] - tr[st-1]) < -0.9 * (right_boundary - left_boundary)
+            tr[st:end] = tr[st:end] .+ (right_boundary - left_boundary)
+        end
+    end
+    traj[ii, :] = tr .- tr[1]
 
-
-tr = r.σs[1, :]
-idx = findall(x -> x < left_boundary || x > right_boundary, tr)
-tr_unfold = tr
-
-
-@showprogress for n in idx
-    tr_unfold[n+1:end] = 2 * tr_unfold[n] .- tr_unfold[n+1:end]
 end
+
+
+fig = Figure(
+    resolution = (1200, 800),
+    fonts = (; math = "CMU Serif"),
+    fontsize = 40,
+    figure_padding = 30,
+)
+
+ax1 = Axis(fig[1, 1])
+
+for ii = 1:nParticles
+    lines!(ax1, r.τs, traj[ii, :])
+end
+
+fig
+traj[] = traj[ii, :] .- traj[ii, 1]
+
+
+std(traj[:, 200])
+st = [std(traj[:, n]) for n = 1:length(r.τs)]
+
+
+fig = Figure(
+    resolution = (1200, 800),
+    fonts = (; math = "CMU Serif"),
+    fontsize = 40,
+    figure_padding = 30,
+)
+
+ax1 = Axis(fig[1, 1])
+lines!(ax1, (r.τs), (st))
+lines!(ax1, (r.τs), 5.2 .* sqrt.(r.τs))
+fig
+# tr = r.σs[1, :]
+# idx = findall(x -> x < left_boundary || x > right_boundary, tr)
+# tr_unfold = tr
+
+
+
 # @showprogress for n in idx
 #     if tr[n] > right_boundary
 #         tr_unfold[n+1:end] = 2 * tr_unfold[n] .- tr_unfold[n+1:end]
@@ -22,14 +66,7 @@ end
 
 # lines(r.τs, tr_unfold)
 
-fig = Figure(
-    resolution = (1200, 800),
-    fonts = (; math = "CMU Serif"),
-    fontsize = 40,
-    figure_padding = 30,
-)
 
-ax1 = Axis(fig[1, 1])
 
 lines!(ax1, r.τs, r.σs[1, :])
 scatter!(ax1, r.τs[idx], r.σs[1, idx])
@@ -135,3 +172,18 @@ fig
 
 # @btime (2 * ones(25) + 2 * ones(25))
 # @btime (2 * (ones(25)  + ones(25) ))
+
+res = load_object("data/Box/TEST_BoxMultiple_τ010_λ1_Φ015_ωT250.0_τ100.jld2")
+tr = res.σs[1, :]
+
+idx = findall(x -> tr[x] - tr[x-1] > 0.9 * (right_boundary - left_boundary), 2:length(tr))
+
+for st = 2:lastindex(tr)
+    if (tr[st] - tr[st-1]) > 0.9 * (right_boundary - left_boundary)
+        tr[st:end] = tr[st:end] .- (right_boundary - left_boundary)
+    elseif (tr[st] - tr[st-1]) < -0.9 * (right_boundary - left_boundary)
+        tr[st:end] = tr[st:end] .+ (right_boundary - left_boundary)
+    end
+end
+
+lines(res.τs, tr)

@@ -200,10 +200,17 @@ function motion_solver(
 
         σ_dot = (σs[:, nxt] - σs[:, curr]) / δ
         for particle in eachindex(σ_dot)
-            if (σs[particle, nxt] < box[1] || σs[particle, nxt] > box[2])
-                σ_dot[particle] = -σ_dot[particle]
+            if (σs[particle, nxt] < box[1])
+                σs[particle, nxt] += (box[2] - box[1])
+            elseif (σs[particle, nxt] > box[2])
+                σs[particle, nxt] -= (box[2] - box[1])
             end
         end
+        # for particle in eachindex(σ_dot)
+        #     if (σs[particle, nxt] < box[1] || σs[particle, nxt] > box[2])
+        #         σ_dot[particle] = -σ_dot[particle]
+        #     end
+        # end
 
         steps_left = n_pts - curr               # Number of time steps remaining
         step_memory = min(τ0_pts, steps_left)   # Number of steps for which ρs are affected by the impulse
