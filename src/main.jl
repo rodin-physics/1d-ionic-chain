@@ -491,6 +491,20 @@ function motion_solver_test(
     return SystemSolution(ωmax, μ, τs[1:final_ind], τ0, α, Φ0, λ, σs[:, 1:final_ind], ρs[:, 1:final_ind], bias, tTraj.ωT)
 end
 
+# Analytic dissipation for Gaussian potential
+function Δ_analytic(v, Φ, λ, Ω)
+    z = (2 * π * λ / v)^2
+    return (
+        4 * π^3 * Φ^2 / v^2 *
+        z *
+        exp(-z * (Ω^2 + 1) / 2) *
+        (
+            besseli(0, z * (Ω^2 - 1) / 2) +
+            (Ω^2 - 1) / 2 * (besseli(0, z * (Ω^2 - 1) / 2) - besseli(1, z * (Ω^2 - 1) / 2))
+        )
+    )
+end
+
 # Calculate energy losses along a full trajectory
 function Δ_traj(data)
     δ = data.τs[2] - data.τs[1]
